@@ -100,11 +100,7 @@ function send_seo_audit_email($post_id, $email) {
             'Performance Score' => $val('psi-performance-score'),
             'Responsive'        => $val('psi-responsive'),
         ],
-        'opportunities' => array_filter([
-            $val('psi-opportunity-1'),
-            $val('psi-opportunity-2'),
-            $val('psi-opportunity-3'),
-        ]),
+        'ai_recommendations' => $val('ai-recommendations'),
         'psi_error' => $val('psi-psi-error'),
         'cta_url'  => 'https://riseup.marketing/contatto',
     ];

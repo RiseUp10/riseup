@@ -1,15 +1,9 @@
 <?php
-/**
- * Plugin Name: Rise Up SEO Tools
- * Description: Funzioni personalizzate per i report SEO (PDF, etc).
- * Version: 1.0
- * Author: Rise Up
- */
+// PDF export for seo_report entries (dompdf-based).
 
-require_once plugin_dir_path(__FILE__) . 'dompdf/autoload.inc.php';
+require_once plugin_dir_path(__FILE__) . '../vendor/dompdf/autoload.inc.php';
 use Dompdf\Dompdf;
 
-// ✅ Include your PDF generator function here (paste full code)
 function generate_seo_audit_pdf($post_id) {
     $get = function ($key) use ($post_id) {
         return get_post_meta($post_id, $key, true) ?: '-';
@@ -53,14 +47,21 @@ function generate_seo_audit_pdf($post_id) {
         <tr><th>TBT (Total Blocking Time)</th><td>' . $get('psi-tbt') . '</td></tr>
         <tr><th>Responsive</th><td>' . $get('psi-responsive') . '</td></tr>
     </table>
-    
-    <h1>3 Cose da Migliorare Subito</h1>
-    <ul>
-        <li>' . $get('psi-opportunity-1') . '</li>
-        <li>' . $get('psi-opportunity-2') . '</li>
-        <li>' . $get('psi-opportunity-3') . '</li>
-    </ul>
-    
+    ';
+    $ai_recommendations = $get('ai-recommendations');
+    if ($ai_recommendations !== '-') {
+        $lines = array_filter(array_map(function ($line) {
+            return trim(preg_replace('/^[-•*]\s*/', '', trim($line)));
+        }, explode("\n", $ai_recommendations)));
+
+        $html .= '<h1>Cosa Migliorare per Prima</h1><ul>';
+        foreach ($lines as $line) {
+            $html .= '<li>' . esc_html($line) . '</li>';
+        }
+        $html .= '</ul>';
+    }
+
+    $html .= '
     <h1>Controllo On-Page</h1>
     <table>
         <tr><th>Titolo</th><td>' . $get('titolo') . '</td></tr>

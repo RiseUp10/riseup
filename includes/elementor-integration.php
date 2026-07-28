@@ -74,18 +74,28 @@ add_action('elementor_pro/forms/new_record', function(Form_Record $record) {
     update_post_meta($post_id, 'lead_resource', $resource);
     update_post_meta($post_id, 'lead_source',   $resource);
 
-    // 9) Envío de email
-    require_once plugin_dir_path(__FILE__) . 'email-manager.php';
+    // 9) Doble opt-in: no se manda la guía todavía. ru_verified_guide
+    // (en includes/verification.php + este archivo) la manda recién al confirmar.
+    ru_send_verification_email($post_id, $email, 'guide');
+    error_log("🔥 [RiseUp] ➤ Verification email queued for post_id={$post_id}");
+
+});
+
+add_action('ru_verified_guide', function ($post_id) {
+    $name     = get_post_meta($post_id, 'lead_name', true);
+    $email    = get_post_meta($post_id, 'lead_email', true);
+    $sector   = get_post_meta($post_id, 'lead_sector', true);
+    $resource = get_post_meta($post_id, 'lead_resource', true);
+    if (!$email) return;
+
     $sent = riseup_send_email([
         'to'         => $email,
         'subject'    => 'Ecco la tua risorsa gratuita',
         'template'   => 'guides',
-        'data'       => compact('name','sector','resource'),
+        'data'       => compact('name', 'sector', 'resource'),
         'attachments'=> [],
     ]);
-    error_log("🔥 [RiseUp] ➤ Email send result=" . ($sent ? 'OK' : 'FAIL'));
-   
-
+    error_log("🔥 [RiseUp] ➤ Guide email send result=" . ($sent ? 'OK' : 'FAIL'));
 });
 
  ?>

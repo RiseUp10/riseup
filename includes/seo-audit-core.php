@@ -1,33 +1,15 @@
 <?php
-/**
- * Plugin Name: SEO & Schema Audit  Tool
- * Description: Basic SEO audit tool with lead capture.
- * Version: 0.1
- * Author: Rise Up
- */
-
-require_once plugin_dir_path(__FILE__) . 'includes/loader.php';
-
-// Email templates & manager
-require_once plugin_dir_path(__FILE__) . 'includes/email-manager.php';
-
-//SEO email report Load
-require_once plugin_dir_path(__FILE__) . 'includes/email-report.php';
-
-//Schema email report Load
-require_once plugin_dir_path(__FILE__) . 'includes/schema-email-report.php';
-
-//All the CPTs load
-require_once plugin_dir_path(__FILE__) . 'includes/cpt-register.php';
-
-require_once plugin_dir_path(__FILE__) . 'includes/elementor-integration.php';
+// SEO & Schema Audit Tool — core AJAX handlers, PSI, admin columns.
+// Requires: cpt-register.php, email-helpers.php, email-manager.php,
+// email-report.php, schema-email-report.php, elementor-integration.php
+// (all loaded by ru-plugin.php before this file).
 
 //JS file Load
 function seo_audit_tool_enqueue_scripts() {
-    
-    $script_path = plugin_dir_path(__FILE__) . 'js/seo-audit.js';
-    $script_url  = plugin_dir_url(__FILE__) . 'js/seo-audit.js';
-    
+
+    $script_path = plugin_dir_path(__FILE__) . '../js/seo-audit.js';
+    $script_url  = plugin_dir_url(__FILE__) . '../js/seo-audit.js';
+
     wp_enqueue_script(
         'seo-audit-handler',
         $script_url,
@@ -51,190 +33,6 @@ add_action('wp_ajax_nopriv_run_seo_audit', 'seo_audit_run');
 add_action('wp_ajax_send_schema_audit_email', 'handle_schema_audit_email_request');
 add_action('wp_ajax_nopriv_send_schema_audit_email', 'handle_schema_audit_email_request');
 
-/*function seo_audit_run() {
-    $url   = filter_var($_POST['site_url'], FILTER_VALIDATE_URL);
-    $email = sanitize_email($_POST['email']);
-
-    if (!$url || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        wp_send_json(['success' => false, 'message' => 'Dati non validi.']);
-    }
-
-    // Match dominio email vs sitio
-    $site_domain  = parse_url($url, PHP_URL_HOST);
-    $email_domain = substr(strrchr($email, "@"), 1);
-    $blocked_domains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'libero.it', 'outlook.com'];
-    if (in_array(strtolower($email_domain), $blocked_domains)) {
-        wp_send_json(['success' => false, 'message' => 'Usa un’email aziendale.']);
-    }
-    if (stripos($site_domain, $email_domain) === false && stripos($email_domain, $site_domain) === false) {
-        wp_send_json(['success' => false, 'message' => 'L’email non corrisponde al dominio del website.']);
-    }
-
-    // ======= FETCH HTML (con timeouts) =======
-    $html = '';
-    if (function_exists('curl_init')) {
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL            => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS      => 5,
-            CURLOPT_CONNECTTIMEOUT => 5,
-            CURLOPT_TIMEOUT        => 10,
-            CURLOPT_USERAGENT      => 'RiseUpAudit/1.0',
-            CURLOPT_HTTPHEADER     => ['Accept: text/html,application/xhtml+xml'],
-        ]);
-        $html = curl_exec($ch);
-        curl_close($ch);
-    }
-    if (empty($html)) {
-        $html = wp_remote_retrieve_body(wp_remote_get($url, [
-            'timeout'     => 10,
-            'redirection' => 3,
-            'user-agent'  => 'RiseUpAudit/1.0',
-        ]));
-    }
-    if (empty($html)) {
-        wp_send_json(['success' => false, 'message' => 'Non è stato possibile leggere il sito.']);
-    }
-
-    // ======= PARSE BASICOS =======
-    $page_size = strlen($html);
-    $is_https  = (parse_url($url, PHP_URL_SCHEME) === 'https') ? 'Sì' : 'No';
-
-    libxml_use_internal_errors(true);
-    $doc   = new DOMDocument();  $doc->loadHTML($html);
-    $xpath = new DOMXPath($doc);
-
-    // viewport
-    $viewport = '';
-    foreach ($doc->getElementsByTagName('meta') as $meta) {
-        if (strtolower($meta->getAttribute('name')) === 'viewport') { $viewport = $meta->getAttribute('content'); break; }
-    }
-    // lang
-    $html_tag = $doc->getElementsByTagName('html')->item(0);
-    $lang     = $html_tag ? $html_tag->getAttribute('lang') : '';
-
-    // schema presente
-    $schema_present = 'Assente';
-    foreach ($doc->getElementsByTagName('script') as $script) {
-        if (strtolower($script->getAttribute('type')) === 'application/ld+json') { $schema_present = 'Presente (JSON-LD)'; break; }
-    }
-    if ($schema_present === 'Assente') {
-        $has_microdata = $xpath->query('//*[@itemscope or @itemtype or @itemprop]');
-        if ($has_microdata->length > 0) { $schema_present = 'Presente (Microdata)'; }
-    }
-
-    $title = $doc->getElementsByTagName('title')->item(0)?->textContent ?? 'Non trovato';
-    $meta_desc = '';
-    foreach ($doc->getElementsByTagName('meta') as $meta) {
-        if (strtolower($meta->getAttribute('name')) === 'description') { $meta_desc = $meta->getAttribute('content'); break; }
-    }
-    $h1 = $xpath->query('//h1')->length > 0 ? 'Presente' : 'Assente';
-
-    $robots = '';
-    foreach ($doc->getElementsByTagName('meta') as $meta) {
-        if (strtolower($meta->getAttribute('name')) === 'robots') { $robots = $meta->getAttribute('content'); break; }
-    }
-    $canonical = '';
-    foreach ($doc->getElementsByTagName('link') as $link) {
-        if (strtolower($link->getAttribute('rel')) === 'canonical') { $canonical = $link->getAttribute('href'); break; }
-    }
-
-    $results = [
-        'Titolo'            => $title,
-        'Meta Description'  => $meta_desc ?: 'Non trovata',
-        'H1'                => $h1,
-        'Meta Robots'       => $robots ?: 'Non trovata',
-        'Canonical'         => $canonical ?: 'Non trovato',
-        'Schema Markup'     => $schema_present,
-        'HTTPS'             => $is_https,
-        'Viewport'          => $viewport ?: 'Non trovato',
-        'Lingua'            => $lang ?: 'Non specificata',
-        'Dimensione HTML'   => round($page_size / 1024, 1) . ' KB',
-    ];
-
-    // ======= CREAR POST Y GUARDAR BASICOS =======
-    $post_id = wp_insert_post([
-        'post_type'   => 'seo_report',
-        'post_title'  => 'Audit per ' . $site_domain . ' - ' . current_time('mysql'),
-        'post_status' => 'publish',
-    ]);
-    if (is_wp_error($post_id) || !$post_id) {
-        wp_send_json(['success' => false, 'message' => 'Errore durante il salvataggio del report.']);
-    }
-
-    foreach ($results as $key => $value) {
-        update_post_meta($post_id, sanitize_title_with_dashes($key), sanitize_text_field($value));
-    }
-    add_post_meta($post_id, 'email', sanitize_email($email)); // array
-    update_post_meta($post_id, 'site_url', esc_url_raw($url));
-    update_post_meta($post_id, 'psi-retry-status', 'pending');
-
-    // ======= PROGRAMAR PSI EN BACKGROUND Y RESPONDER YA =======
-    if (!wp_next_scheduled('seo_audit_single_retry', [$post_id])) {
-        wp_schedule_single_event(time() + 5, 'seo_audit_single_retry', [$post_id]);
-    }
-
-    wp_send_json([
-        'success'      => true,
-        'message'      => 'Analisi base completata. Il report completo ti arriverà via email a breve.',
-        'email_status' => 'pending',
-        'data'         => $results
-    ]);
-}*/
-
-/*function seo_audit_run() {
-    $url   = filter_var($_POST['site_url'], FILTER_VALIDATE_URL);
-    $email = sanitize_email($_POST['email']);
-
-    if (!$url || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        wp_send_json(['success' => false, 'message' => 'Dati non validi.']);
-    }
-
-    $site_domain  = parse_url($url, PHP_URL_HOST);
-    $email_domain = substr(strrchr($email, "@"), 1);
-    $blocked = ['gmail.com','yahoo.com','hotmail.com','libero.it','outlook.com'];
-    if (in_array(strtolower($email_domain), $blocked)) {
-        wp_send_json(['success' => false, 'message' => 'Usa un’email aziendale.']);
-    }
-    if (stripos($site_domain, $email_domain) === false && stripos($email_domain, $site_domain) === false) {
-        wp_send_json(['success' => false, 'message' => 'L’email non corrisponde al dominio del website.']);
-    }
-
-    // Crea el CPT "vacío" y agenda el trabajo completo en background
-    $post_id = wp_insert_post([
-        'post_type'   => 'seo_report',
-        'post_title'  => 'Audit per ' . $site_domain . ' - ' . current_time('mysql'),
-        'post_status' => 'publish',
-    ]);
-    if (is_wp_error($post_id) || !$post_id) {
-        wp_send_json(['success' => false, 'message' => 'Errore durante il salvataggio del report.']);
-    }
-
-    add_post_meta($post_id, 'email', sanitize_email($email));
-    update_post_meta($post_id, 'site_url', esc_url_raw($url));
-    update_post_meta($post_id, 'audit-status', 'queued');
-    update_post_meta($post_id, 'psi-retry-status', 'pending');
-
-        //wp_schedule_single_event(time() + 120, 'seo_audit_full_job', [$post_id]);
-        
-    // 🔧 ejecuta el job luego de mandar la respuesta al usuario
-    register_shutdown_function(function() use ($post_id) {
-        if (function_exists('fastcgi_finish_request')) {
-            fastcgi_finish_request();
-        }
-        do_action('seo_audit_full_job', $post_id);
-    });
-
-    // Respuesta inmediata (0 análisis en AJAX)
-    wp_send_json([
-        'success'      => true,
-        'message'      => 'Analisi base completata. Il report completo ti arriverà via email a breve.',
-        'email_status' => 'pending',
-    ]);
-}*/
-
 function seo_audit_run() {
     $url   = filter_var($_POST['site_url'], FILTER_VALIDATE_URL);
     $email = sanitize_email($_POST['email']);
@@ -242,93 +40,27 @@ function seo_audit_run() {
     if (!$url || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         wp_send_json(['success' => false, 'message' => 'Dati non validi.']);
     }
-    
-    $site_domain  = parse_url($url, PHP_URL_HOST);
-    $email_domain = substr(strrchr($email, "@"), 1);
-    $blocked = ['gmail.com','yahoo.com','hotmail.com','libero.it','outlook.com'];
-    if (in_array(strtolower($email_domain), $blocked)) {
-        wp_send_json(['success' => false, 'message' => 'Usa un’email aziendale.']);
-    }
-    if (stripos($site_domain, $email_domain) === false && stripos($email_domain, $site_domain) === false) {
-        wp_send_json(['success' => false, 'message' => 'L’email non corrisponde al dominio del website.']);
+
+    $site_domain = parse_url($url, PHP_URL_HOST);
+
+    // Honeypot: campo oculto inyectado por JS que solo un bot llena. Si viene
+    // con valor, respondemos éxito falso (para no delatar el filtro) y cortamos.
+    if (!empty($_POST['hp_field'])) {
+        wp_send_json(['success' => true, 'message' => 'Analisi in corso. Il report completo ti arriverà via email a breve.']);
     }
 
-    // FETCH HTML (cURL → fallback WP)
-    $html = '';
-    if (function_exists('curl_init')) {
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url, CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 5, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => 20,
-            CURLOPT_USERAGENT => 'RiseUpAudit/1.0', CURLOPT_HTTPHEADER => ['Accept: text/html,application/xhtml+xml'],
-        ]);
-        $html = curl_exec($ch);
-        curl_close($ch);
-    }
-    if (empty($html)) {
-        $html = wp_remote_retrieve_body(wp_remote_get($url, [
-            'timeout'=>20,'redirection'=>3,'user-agent'=>'RiseUpAudit/1.0'
-        ]));
-    }
-    if (empty($html)) {
-        wp_send_json(['success' => false, 'message' => 'Non è stato possibile leggere il sito.']);
+    // Rate limit por IP: máx 3 audit al día, corta abuso manual sin pedir cuenta a nadie.
+    $ip = sanitize_text_field($_SERVER['REMOTE_ADDR'] ?? '');
+    if ($ip) {
+        $rl_key = 'ru_audit_rl_' . md5($ip);
+        $count  = (int) get_transient($rl_key);
+        if ($count >= 3) {
+            wp_send_json(['success' => false, 'message' => 'Hai già richiesto un audit di recente. Controlla la tua email o riprova più tardi.']);
+        }
+        set_transient($rl_key, $count + 1, DAY_IN_SECONDS);
     }
 
-    // PARSE BASICS
-    $page_size = strlen($html);
-    $is_https  = (parse_url($url, PHP_URL_SCHEME) === 'https') ? 'Sì' : 'No';
-
-    libxml_use_internal_errors(true);
-    $doc = new DOMDocument(); $doc->loadHTML($html);
-    $xpath = new DOMXPath($doc);
-
-    $viewport = '';
-    foreach ($doc->getElementsByTagName('meta') as $m) {
-        if (strtolower($m->getAttribute('name')) === 'viewport') { $viewport = $m->getAttribute('content'); break; }
-    }
-    $html_tag = $doc->getElementsByTagName('html')->item(0);
-    $lang     = $html_tag ? $html_tag->getAttribute('lang') : '';
-
-    $schema_present = 'Assente';
-    foreach ($doc->getElementsByTagName('script') as $s) {
-        if (strtolower($s->getAttribute('type')) === 'application/ld+json') { $schema_present = 'Presente (JSON-LD)'; break; }
-    }
-    if ($schema_present === 'Assente') {
-        $has_micro = $xpath->query('//*[@itemscope or @itemtype or @itemprop]');
-        if ($has_micro->length > 0) $schema_present = 'Presente (Microdata)';
-    }
-
-    $title = $doc->getElementsByTagName('title')->item(0)?->textContent ?? 'Non trovato';
-
-    $meta_desc = '';
-    foreach ($doc->getElementsByTagName('meta') as $m) {
-        if (strtolower($m->getAttribute('name')) === 'description') { $meta_desc = $m->getAttribute('content'); break; }
-    }
-    $h1 = $xpath->query('//h1')->length > 0 ? 'Presente' : 'Assente';
-
-    $robots = '';
-    foreach ($doc->getElementsByTagName('meta') as $m) {
-        if (strtolower($m->getAttribute('name')) === 'robots') { $robots = $m->getAttribute('content'); break; }
-    }
-    $canonical = '';
-    foreach ($doc->getElementsByTagName('link') as $l) {
-        if (strtolower($l->getAttribute('rel')) === 'canonical') { $canonical = $l->getAttribute('href'); break; }
-    }
-
-    $results = [
-        'Titolo'           => $title,
-        'Meta Description' => $meta_desc ?: 'Non trovata',
-        'H1'               => $h1,
-        'Meta Robots'      => $robots ?: 'Non trovata',
-        'Canonical'        => $canonical ?: 'Non trovato',
-        'Schema Markup'    => $schema_present,
-        'HTTPS'            => $is_https,
-        'Viewport'         => $viewport ?: 'Non trovato',
-        'Lingua'           => $lang ?: 'Non specificata',
-        'Dimensione HTML'  => round($page_size / 1024, 1) . ' KB',
-    ];
-
-    // CREA POST Y GUARDA BASICS
+    // Crea el CPT "vacío" y agenda el trabajo completo (scrape + PSI + email) en background.
     $post_id = wp_insert_post([
         'post_type'   => 'seo_report',
         'post_title'  => 'Audit per ' . $site_domain . ' - ' . current_time('mysql'),
@@ -338,35 +70,32 @@ function seo_audit_run() {
         wp_send_json(['success' => false, 'message' => 'Errore durante il salvataggio del report.']);
     }
 
-    foreach ($results as $k=>$v) {
-        update_post_meta($post_id, sanitize_title_with_dashes($k), sanitize_text_field($v));
-    }
     add_post_meta($post_id, 'email', sanitize_email($email));
     update_post_meta($post_id, 'site_url', esc_url_raw($url));
+    update_post_meta($post_id, 'audit-status', 'pending_verification');
 
-    // PSI (inline, el que te funcionaba)
-    $psi = run_pagespeed_audit($url);
-    update_post_meta($post_id, 'psi-raw-json', wp_json_encode($psi));
-    foreach ($psi as $k=>$v) {
-        update_post_meta($post_id, 'psi-'.sanitize_title_with_dashes($k), sanitize_text_field($v));
-    }
-    if (isset($psi['PSI error'])) {
-        update_post_meta($post_id, 'psi-retry-status', 'pending');
-    } else {
-        update_post_meta($post_id, 'psi-retry-status', 'completed');
-    }
+    // Doble opt-in (ver includes/verification.php): no se corre nada pesado
+    // todavía. El audit real arranca en ru_verified_seo_audit, cuando el
+    // dueño del email confirma.
+    register_shutdown_function(function () use ($post_id, $email) {
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        }
+        ru_send_verification_email($post_id, $email, 'seo_audit');
+    });
 
-    // EMAIL (usa email-templates/seo-audit-template.php)
-    send_seo_audit_email($post_id, $email);
-
-    // RESPUESTA
     wp_send_json([
-        'success' => true,
-        'message' => 'Audit completato! Ti invieremo il report a breve.',
-        'data'    => $results
+        'success'      => true,
+        'message'      => 'Controlla la tua email e conferma l’indirizzo per ricevere il report.',
+        'email_status' => 'pending_verification',
     ]);
 }
 
+add_action('ru_verified_seo_audit', function ($post_id) {
+    update_post_meta($post_id, 'audit-status', 'queued');
+    update_post_meta($post_id, 'psi-retry-status', 'pending');
+    do_action('seo_audit_full_job', $post_id);
+});
 
 add_action('seo_audit_full_job', function($post_id){
     $status = get_post_meta($post_id, 'audit-status', true);
@@ -473,10 +202,44 @@ add_action('seo_audit_full_job', function($post_id){
     update_post_meta($post_id, 'psi-retry-status', 'completed');
     update_post_meta($post_id, 'audit-status', 'completed');
 
+    // Recomendaciones vía LLM, en reemplazo de las "opportunities" genéricas
+    // de PSI que se comentaron más arriba (ver includes/ai-helpers.php).
+    $ai_recommendations = ru_generate_seo_recommendations($post_id);
+    if ($ai_recommendations) {
+        update_post_meta($post_id, 'ai-recommendations', $ai_recommendations);
+    }
+
     foreach ($emails as $to) {
         if (!empty($to)) send_seo_audit_email($post_id, $to);
     }
 }, 10, 1);
+
+function ru_generate_seo_recommendations($post_id) {
+    $get = fn($k) => get_post_meta($post_id, $k, true) ?: '-';
+
+    $prompt = "Dati raccolti per l'audit SEO di {$get('site_url')}:\n\n"
+        . "On-page:\n"
+        . "- Titolo: {$get('titolo')}\n"
+        . "- Meta Description: {$get('meta-description')}\n"
+        . "- H1: {$get('h1')}\n"
+        . "- Schema Markup: {$get('schema-markup')}\n"
+        . "- HTTPS: {$get('https')}\n\n"
+        . "PageSpeed:\n"
+        . "- Performance Score: {$get('psi-performance-score')}\n"
+        . "- LCP: {$get('psi-lcp')}\n"
+        . "- CLS: {$get('psi-cls')}\n"
+        . "- INP: {$get('psi-inp')}\n"
+        . "- TBT: {$get('psi-tbt')}\n";
+
+    return ru_ai_complete($prompt, [
+        'system' => 'Sei un consulente SEO che scrive per Rise Up, un\'agenzia italiana. '
+            . 'Analizza i dati e scrivi 3-4 raccomandazioni prioritizzate, concrete e in '
+            . 'linguaggio semplice (non tecnico-burocratico). Ogni raccomandazione: una frase, '
+            . 'inizia con il problema principale che risolve. Rispondi SOLO con un elenco '
+            . 'puntato in italiano, senza introduzioni né conclusioni.',
+        'max_tokens' => 500,
+    ]);
+}
 
 
 //PSI API logic
@@ -492,7 +255,9 @@ add_action('edit_form_after_title', function ($post) {
 function run_pagespeed_audit($url) {
     $proxy_url = 'https://pagespeed-proxy-node.onrender.com/?url=' . urlencode($url);
 
-    $response = wp_remote_get($proxy_url, ['timeout' => 10]);
+    // Corre en background (post-fastcgi_finish_request), así que puede esperar
+    // más sin costarle nada al visitante — cubre el cold-start del proxy en Render.
+    $response = wp_remote_get($proxy_url, ['timeout' => 30]);
 
     if (is_wp_error($response)) {
         error_log('PSI HTTP ERROR: ' . $response->get_error_message());
@@ -566,21 +331,25 @@ function run_pagespeed_audit($url) {
     $final_score = round($score * 100);
     $results['Performance Score'] = $final_score . '/100 (' . $interpret('Performance Score', $final_score) . ')';
     
-    // 📌 Save top 3 improvement opportunities
+    // Comentado a pedido: las "opportunities" de PSI son boilerplate genérico
+    // de Google (Lighthouse), no análisis real. Se reemplazan por recomendaciones
+    // vía LLM. Dejado acá por si hace falta volver atrás.
+    /*
     $opportunities = array_filter($audits, function ($audit) {
         return isset($audit['details']['type']) && $audit['details']['type'] === 'opportunity';
     });
-    
+
     usort($opportunities, function ($a, $b) {
         return ($b['score'] ?? 0) <=> ($a['score'] ?? 0);
     });
-    
+
     $topOps = array_slice($opportunities, 0, 3);
     foreach ($topOps as $i => $item) {
         $title = $item['title'] ?? 'Senza titolo';
         $desc = strip_tags($item['description'] ?? '');
         $results['Opportunity ' . ($i + 1)] = "$title – $desc";
     }
+    */
 
     //Analyze responsiveness
     if (isset($audits['uses-responsive-images'])) {
@@ -742,9 +511,9 @@ add_action('wp_enqueue_scripts', function () {
     if (is_page()) { // puoi raffinare il controllo se vuoi
         wp_enqueue_script(
             'schema-audit-js',
-            plugin_dir_url(__FILE__) . 'js/schema-audit.js',
+            plugin_dir_url(__FILE__) . '../js/schema-audit.js',
             ['jquery'],
-            filemtime(plugin_dir_path(__FILE__) . 'js/schema-audit.js'),
+            filemtime(plugin_dir_path(__FILE__) . '../js/schema-audit.js'),
             true
         );
 
@@ -758,9 +527,9 @@ add_action('wp_enqueue_scripts', function () {
 add_action('admin_enqueue_scripts', function () {
     wp_enqueue_style(
         'seo-admin-columns',
-        plugin_dir_url(__FILE__) . 'assets/css/admin-columns.css',
+        plugin_dir_url(__FILE__) . '../assets/css/admin-columns.css',
         [],
-        filemtime(plugin_dir_path(__FILE__) . 'assets/css/admin-columns.css')
+        filemtime(plugin_dir_path(__FILE__) . '../assets/css/admin-columns.css')
     );
 });
 
@@ -872,21 +641,28 @@ function handle_schema_audit_email_request() {
         add_post_meta($post_id, 'email', $e);
     }
 
-    $email_check = get_post_meta($post_id, 'email', true);
-    error_log("🔍 EMAIL DEBUG: " . $email_check);
+    // Doble opt-in: no se manda el report todavía. ru_verified_schema_audit
+    // (más abajo) hace el envío real + la copia a admin, recién al confirmar.
+    register_shutdown_function(function () use ($post_id, $email) {
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        }
+        ru_send_verification_email($post_id, $email, 'schema_audit');
+    });
 
-
-    // ✅ Use the already defined HTML function
-    if (function_exists('send_schema_audit_email')) {
-        send_schema_audit_email($post_id, $email);
-    }
-
-    // 👀 Admin copy
-    $site_url = get_post_meta($post_id, 'site_url', true);
-    $subject = '[COPIA] Schema Audit – ' . $site_url;
-    $body = "Email: $email\n\nReport inviato correttamente.";
-
-    wp_mail('riseup.businessmaker@gmail.com', $subject, $body);
-
-    wp_send_json_success(['message' => 'Report inviato via email.']);
+    wp_send_json_success(['message' => 'Controlla la tua email e conferma l’indirizzo per ricevere il report.']);
 }
+
+add_action('ru_verified_schema_audit', function ($post_id) {
+    $email = get_post_meta($post_id, 'email', true);
+    if (!$email || !function_exists('send_schema_audit_email')) return;
+
+    send_schema_audit_email($post_id, $email);
+
+    $site_url = get_post_meta($post_id, 'site_url', true);
+    wp_mail(
+        'riseup.businessmaker@gmail.com',
+        '[COPIA] Schema Audit – ' . $site_url,
+        "Email: $email\n\nReport confermato e inviato."
+    );
+});

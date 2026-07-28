@@ -23,11 +23,15 @@
         <?php endforeach; ?>
     </ul>
 
-    <?php if (!empty($opportunities)): ?>
-        <h3>🚀 Opportunità di miglioramento</h3>
+    <?php if (!empty($ai_recommendations) && $ai_recommendations !== '-'):
+        $lines = array_filter(array_map(function ($line) {
+            return trim(preg_replace('/^[-•*]\s*/', '', trim($line)));
+        }, explode("\n", $ai_recommendations)));
+    ?>
+        <h3>🚀 Cosa migliorare per prima</h3>
         <ul>
-            <?php foreach($opportunities as $op): ?>
-                <li><?= esc_html($op) ?></li>
+            <?php foreach($lines as $line): ?>
+                <li><?= esc_html($line) ?></li>
             <?php endforeach; ?>
         </ul>
     <?php endif; ?>
