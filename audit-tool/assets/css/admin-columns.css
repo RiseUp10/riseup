@@ -1,0 +1,15 @@
+.seo-status.ok {
+  color: green;
+  font-weight: bold;
+}
+.seo-status.pending {
+  color: orange;
+  font-weight: bold;
+}
+.seo-status.unknown {
+  color: gray;
+}
+.seo-email {
+  font-style: italic;
+  color: #333;
+}
