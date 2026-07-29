@@ -1,0 +1,21 @@
+.card_img { aspect-ratio:3/2; background-repeat:no-repeat; background-size:cover; position:center!important; object-fit:cover; }
+.card { max-height:320px; max-width:480px !important; }
+
+/* Share button */
+.sc-share-toggle, .sc-share-item { cursor:pointer; border:0!important; padding:5px!important; }
+.sc-share-menu.is-open .sc-share-dropdown { display:flex; flex-direction:row; gap:4px; }
+.sc-share-dropdown { display:none; position:absolute; top:50px; right:-10px; border-radius:8px; background: #0E400F; padding: 2px 8px; box-shadow: 0 0 20px -5px #070110; }
+.sc-share-item, .sc-share-item.sc-share-copy { color:#F4F4F4; font-size:20px; }
+.sc-share-item:hover, .sc-share-item.sc-share-copy:hover { color:#36E383; font-size:20px; }
+.sc-share-toggle i { color:#f4f4f4; font-size:25px; }
+.sc-share-menu button:hover{ background:transparent!important; }
+.sc-share-menu button:focus { background:transparent!important; }
+
+/* ACADEMY ARTICLE */
+.content_table { font-size:18px; color:#000; width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.content_table td { text-align:center; font-weight:500; font-family:ubuntu; font-size:18px; }
+.content_table thead { background:#fff; }
+.content_table--cel { font-weight:900; }
+
+.article_link { text-decoration:none; color:#36E383;border-radius:12px; padding:0 10px;}
+.article_link:hover { background-color:#36E383; color:#0E400F; }

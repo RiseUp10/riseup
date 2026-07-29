@@ -1,5 +1,14 @@
 # Changelog — RU Plugin
 
+## 2026-07-29
+
+Agregado el CPT `accademia` (blog/recursos, público) + taxonomía jerárquica
+`academy_pillar` para organizarlo por pilar temático. Era código pegado
+suelto (función sin el hook `init`, taxonomía registrada fuera de cualquier
+hook — no llegaba a correr tal como estaba) — se corrigió al integrarlo:
+se le sacó el prefijo `salvacash_` del nombre de función (se porta a RU, no
+se queda con el nombre de origen) y se enganchó todo correctamente a `init`.
+
 ## 2026-07-28
 
 Primera versión del plugin consolidado. Antes eran 3 plugins separados

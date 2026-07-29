@@ -15,6 +15,9 @@ antes eran 3 plugins separados (`riseup-seo-tools`, `seo-audit-tool`,
   devuelve PageSpeed, se le pasan los datos del audit a Claude Haiku 4.5 y
   devuelve 3-4 recomendaciones concretas en italiano.
 - **Export a PDF** — de cualquier `seo_report`, vía dompdf.
+- **Accademia** — CPT `accademia` (blog/recursos educativos, público, slug
+  `/accademia/`) + taxonomía jerárquica `academy_pillar` (slug `/pilastro/`)
+  para organizar los artículos por pilar temático.
 
 ## Estructura
 

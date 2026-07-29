@@ -20,3 +20,12 @@ require_once plugin_dir_path(__FILE__) . 'includes/schema-email-report.php';
 require_once plugin_dir_path(__FILE__) . 'includes/elementor-integration.php';
 require_once plugin_dir_path(__FILE__) . 'includes/seo-audit-core.php';
 require_once plugin_dir_path(__FILE__) . 'includes/pdf-report.php';
+
+add_action('wp_enqueue_scripts', function () {
+    wp_enqueue_style(
+        'ru-plugin-style',
+        plugin_dir_url(__FILE__) . 'assets/css/style.css',
+        [],
+        filemtime(plugin_dir_path(__FILE__) . 'assets/css/style.css')
+    );
+});
