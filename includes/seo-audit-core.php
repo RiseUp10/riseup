@@ -256,15 +256,22 @@ add_action('edit_form_after_title', function ($post) {
 });
 
 function run_pagespeed_audit($url) {
-    $proxy_url = 'https://pagespeed-proxy-node.onrender.com/?url=' . urlencode($url);
+    // API oficial de Google PageSpeed Insights
+    $api_key = defined('GOOGLE_PSI_API_KEY') ? GOOGLE_PSI_API_KEY : '';
+    if (empty($api_key)) {
+        error_log('PSI CONFIG ERROR: GOOGLE_PSI_API_KEY no definida en wp-config.php');
+        return ['PSI error' => 'Configurazione mancante (API key).'];
+    }
+
+    $psi_url = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=' . urlencode($url) . '&key=' . urlencode($api_key) . '&category=performance';
 
     // Reintentos síncronos: 3 intentos antes de fallar.
-    // Timeout corto (10s) pero con reintentos — mejor que esperar 30s una vez.
+    // Timeout de 20s — API oficial es más confiable que proxy, puede esperar un poco.
     $max_attempts = 3;
     $response = null;
 
     for ($attempt = 1; $attempt <= $max_attempts; $attempt++) {
-        $response = wp_remote_get($proxy_url, ['timeout' => 10]);
+        $response = wp_remote_get($psi_url, ['timeout' => 20]);
 
         if (!is_wp_error($response)) {
             $body = wp_remote_retrieve_body($response);
@@ -278,7 +285,7 @@ function run_pagespeed_audit($url) {
 
         // Si no es el último intento, espera un poco antes de reintentar.
         if ($attempt < $max_attempts) {
-            sleep(1);
+            sleep(2);
         }
     }
 
@@ -289,8 +296,8 @@ function run_pagespeed_audit($url) {
 
     $data = json_decode(wp_remote_retrieve_body($response), true);
     if (!isset($data['lighthouseResult']['audits'])) {
-        error_log('PSI RESPONSE INVALID');
-        return ['PSI error' => 'Risposta non valida dal proxy.'];
+        error_log('PSI RESPONSE INVALID: ' . print_r($data, true));
+        return ['PSI error' => 'Risposta non valida da Google PageSpeed API.'];
     }
     
     $audits = $data['lighthouseResult']['audits']; //Last line
