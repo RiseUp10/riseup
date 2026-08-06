@@ -1,5 +1,17 @@
 # Changelog — RU Plugin
 
+## 2026-08-06
+
+**Email delivery fixes + API upgrade + Schema audit redesign**
+
+- **SEO Audit**: Switched from unreliable third-party Render proxy to official Google PageSpeed Insights API (requires `GOOGLE_PSI_API_KEY` in wp-config.php). Added 3 synchronous retries with backoff to handle transient failures.
+- **SEO Audit**: Fixed email template rendering (was showing raw Array dump). Rewrote template with proper variable checks, CSS styling, and prominent PSI failure warnings with retry instructions.
+- **SEO Audit**: Email now only goes to requestor (removed BCC to admin).
+- **Schema Audit**: Completely redesigned to match SEO flow — URL + Email mandatory upfront, email confirmation required before analysis runs. Analysis now executes in background after verification, not immediately.
+- **Schema Audit**: Fixed email validation (was only checking if empty, not validating format).
+- **Schema Audit**: Email now uses `riseup_send_email()` wrapper instead of raw `wp_mail()` (ensures SMTP routing).
+- **Schema Audit**: If schema NOT found, no email sent (reduces noise; only sends when schema exists).
+
 ## 2026-07-29
 
 Agregado el CPT `accademia` (blog/recursos, público) + taxonomía jerárquica
