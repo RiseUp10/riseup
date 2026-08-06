@@ -193,13 +193,15 @@ add_action('seo_audit_full_job', function($post_id){
         update_post_meta($post_id, 'psi-'.sanitize_title_with_dashes($k), sanitize_text_field($v));
     }
 
-    if (isset($psi['PSI error'])) {
-        update_post_meta($post_id, 'psi-retry-status', 'pending');
-        update_post_meta($post_id, 'audit-status', 'processing');
-        return;
+    // Si PSI falla, igual mandamos el mail — el usuario no queda colgado.
+    // Marcamos que PSI tuvo problema pero el audit igual se completa con datos on-page + IA.
+    $psi_failed = isset($psi['PSI error']);
+    if ($psi_failed) {
+        update_post_meta($post_id, 'psi-retry-status', 'failed');
+    } else {
+        update_post_meta($post_id, 'psi-retry-status', 'completed');
     }
 
-    update_post_meta($post_id, 'psi-retry-status', 'completed');
     update_post_meta($post_id, 'audit-status', 'completed');
 
     // Recomendaciones vía LLM, en reemplazo de las "opportunities" genéricas
@@ -209,6 +211,7 @@ add_action('seo_audit_full_job', function($post_id){
         update_post_meta($post_id, 'ai-recommendations', $ai_recommendations);
     }
 
+    // Manda el email con lo que tenemos — no bloquea si PSI falló.
     foreach ($emails as $to) {
         if (!empty($to)) send_seo_audit_email($post_id, $to);
     }
@@ -255,12 +258,32 @@ add_action('edit_form_after_title', function ($post) {
 function run_pagespeed_audit($url) {
     $proxy_url = 'https://pagespeed-proxy-node.onrender.com/?url=' . urlencode($url);
 
-    // Corre en background (post-fastcgi_finish_request), así que puede esperar
-    // más sin costarle nada al visitante — cubre el cold-start del proxy en Render.
-    $response = wp_remote_get($proxy_url, ['timeout' => 30]);
+    // Reintentos síncronos: 3 intentos antes de fallar.
+    // Timeout corto (10s) pero con reintentos — mejor que esperar 30s una vez.
+    $max_attempts = 3;
+    $response = null;
+
+    for ($attempt = 1; $attempt <= $max_attempts; $attempt++) {
+        $response = wp_remote_get($proxy_url, ['timeout' => 10]);
+
+        if (!is_wp_error($response)) {
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+
+            // Si la respuesta es válida, corta.
+            if (isset($data['lighthouseResult']['audits'])) {
+                break;
+            }
+        }
+
+        // Si no es el último intento, espera un poco antes de reintentar.
+        if ($attempt < $max_attempts) {
+            sleep(1);
+        }
+    }
 
     if (is_wp_error($response)) {
-        error_log('PSI HTTP ERROR: ' . $response->get_error_message());
+        error_log('PSI HTTP ERROR (attempt ' . $attempt . '): ' . $response->get_error_message());
         return ['PSI error' => 'Errore nella chiamata a PageSpeed API.'];
     }
 
