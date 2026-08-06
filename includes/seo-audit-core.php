@@ -30,8 +30,9 @@ add_action('wp_enqueue_scripts', 'seo_audit_tool_enqueue_scripts');
 add_action('wp_ajax_run_seo_audit', 'seo_audit_run');
 add_action('wp_ajax_nopriv_run_seo_audit', 'seo_audit_run');
 
-add_action('wp_ajax_send_schema_audit_email', 'handle_schema_audit_email_request');
-add_action('wp_ajax_nopriv_send_schema_audit_email', 'handle_schema_audit_email_request');
+// Init Schema Audit (doble opt-in, como SEO)
+add_action('wp_ajax_init_schema_audit', 'init_schema_audit');
+add_action('wp_ajax_nopriv_init_schema_audit', 'init_schema_audit');
 
 function seo_audit_run() {
     $url   = filter_var($_POST['site_url'], FILTER_VALIDATE_URL);
@@ -654,45 +655,109 @@ function schema_audit_run() {
     ]);
 }
 
-function handle_schema_audit_email_request() {
-    $post_id = intval($_POST['post_id'] ?? 0);
-    $email   = sanitize_email($_POST['email'] ?? '');
+// Init Schema Audit: crea CPT + pide confirmación (doble opt-in, como SEO)
+function init_schema_audit() {
+    $url   = filter_var($_POST[‘site_url’] ?? ‘’, FILTER_VALIDATE_URL);
+    $email = sanitize_email($_POST[‘email’] ?? ‘’);
 
-    if (!$post_id || empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        wp_send_json_error(['message' => 'Dati non validi o email mancante.']);
-    }
-    
-    // 🔐 Save email for dashboard column
-    $existing = get_post_meta($post_id, 'email');
-    $existing[] = $email;
-    $unique = array_unique(array_map('sanitize_email', $existing));
-    delete_post_meta($post_id, 'email');
-    foreach ($unique as $e) {
-        add_post_meta($post_id, 'email', $e);
+    if (!$url || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        wp_send_json_error([‘message’ => ‘Dati non validi.’]);
     }
 
-    // Doble opt-in: no se manda el report todavía. ru_verified_schema_audit
-    // (más abajo) hace el envío real + la copia a admin, recién al confirmar.
+    // Crea el CPT "vacío" (el análisis ocurre después de confirmar email)
+    $post_id = wp_insert_post([
+        ‘post_type’   => ‘seo_report’,
+        ‘post_title’  => ‘Schema Audit – ‘ . parse_url($url, PHP_URL_HOST) . ‘ - ‘ . current_time(‘mysql’),
+        ‘post_status’ => ‘publish’,
+    ]);
+
+    if (is_wp_error($post_id) || !$post_id) {
+        wp_send_json_error([‘message’ => ‘Errore durante il salvataggio del report.’]);
+    }
+
+    add_post_meta($post_id, ‘email’, sanitize_email($email));
+    update_post_meta($post_id, ‘site_url’, esc_url_raw($url));
+    update_post_meta($post_id, ‘audit-status’, ‘pending_verification’);
+    update_post_meta($post_id, ‘report_type’, ‘schema’);
+
+    // Doble opt-in: no se corre análisis todavía
     register_shutdown_function(function () use ($post_id, $email) {
-        if (function_exists('fastcgi_finish_request')) {
+        if (function_exists(‘fastcgi_finish_request’)) {
             fastcgi_finish_request();
         }
-        ru_send_verification_email($post_id, $email, 'schema_audit');
+        ru_send_verification_email($post_id, $email, ‘schema_audit’);
     });
 
-    wp_send_json_success(['message' => 'Controlla la tua email e conferma l’indirizzo per ricevere il report.']);
+    wp_send_json([
+        ‘success’      => true,
+        ‘message’      => ‘Controlla la tua email e conferma l\’indirizzo per ricevere l\’analisi.’,
+        ‘email_status’ => ‘pending_verification’,
+    ]);
 }
 
+// Cuando se confirma el email de Schema, dispara el análisis en background
 add_action('ru_verified_schema_audit', function ($post_id) {
-    $email = get_post_meta($post_id, 'email', true);
-    if (!$email || !function_exists('send_schema_audit_email')) return;
+    update_post_meta($post_id, 'audit-status', 'queued');
+    do_action('schema_audit_full_job', $post_id);
+});
 
-    send_schema_audit_email($post_id, $email);
+// El análisis real de Schema (ocurre en background después de confirmar email)
+add_action('schema_audit_full_job', function ($post_id) {
+    $status = get_post_meta($post_id, 'audit-status', true);
+    if ($status === 'processing' || $status === 'completed') return;
+
+    update_post_meta($post_id, 'audit-status', 'processing');
 
     $site_url = get_post_meta($post_id, 'site_url', true);
-    wp_mail(
-        'riseup.businessmaker@gmail.com',
-        '[COPIA] Schema Audit – ' . $site_url,
-        "Email: $email\n\nReport confermato e inviato."
-    );
+    $emails = array_unique(array_map('sanitize_email', (array)get_post_meta($post_id, 'email')));
+
+    if (empty($site_url)) return;
+
+    // ---- FETCH HTML ----
+    $resp = wp_remote_get($site_url, ['timeout' => 10, 'redirection' => 3, 'user-agent' => 'RiseUpAudit/1.0']);
+    if (is_wp_error($resp)) {
+        update_post_meta($post_id, 'audit-status', 'completed');
+        return;
+    }
+
+    $html = wp_remote_retrieve_body($resp);
+    if (empty($html)) {
+        update_post_meta($post_id, 'audit-status', 'completed');
+        return;
+    }
+
+    // ---- DETECTA SCHEMA ----
+    preg_match_all('#<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>#is', $html, $matches);
+    $schemas_raw   = array_map('trim', $matches[1] ?? []);
+    $schemas_valid = [];
+
+    foreach ($schemas_raw as $code) {
+        $json = json_decode($code, true);
+        if ($json && (is_array($json) || is_object($json))) {
+            $schemas_valid[] = $json;
+        }
+    }
+
+    // ---- DETERMINA STATUS ----
+    if (empty($schemas_raw)) {
+        $status = 'not_found';
+        $message = '❌ Schema Markup: Non trovato';
+    } elseif (empty($schemas_valid)) {
+        $status = 'needs_optimization';
+        $message = '⚠️ Schema Markup: Trovato, ma non valido o ottimizzabile';
+    } else {
+        $status = 'ok';
+        $message = '✅ Schema Markup: Trovato e valido';
+    }
+
+    // ---- GUARDA DATOS ----
+    update_post_meta($post_id, 'schema_status', $status);
+    update_post_meta($post_id, 'schema_raw', implode("\n\n", $schemas_raw));
+    update_post_meta($post_id, 'schema_valid', json_encode($schemas_valid));
+    update_post_meta($post_id, 'audit-status', 'completed');
+
+    // ---- MANDA EMAIL ----
+    foreach ($emails as $to) {
+        if (!empty($to)) send_schema_audit_email($post_id, $to);
+    }
 });
