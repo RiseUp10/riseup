@@ -628,8 +628,8 @@ function handle_schema_audit_email_request() {
     $post_id = intval($_POST['post_id'] ?? 0);
     $email   = sanitize_email($_POST['email'] ?? '');
 
-    if (!$post_id || empty($email)) {
-        wp_send_json_error(['message' => 'Dati mancanti.']);
+    if (!$post_id || empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        wp_send_json_error(['message' => 'Dati non validi o email mancante.']);
     }
     
     // 🔐 Save email for dashboard column

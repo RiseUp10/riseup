@@ -101,14 +101,21 @@ document.addEventListener('DOMContentLoaded', function () {
       fetch(schemaAuditData.ajaxurl, { method: 'POST', body: fd })
         .then(r => r.json())
         .then(data => {
-          responseBox.className = 'schema-audit-response';
-          const msg = (data && data.data && data.data.message) ? data.data.message : 'Report inviato via email.';
+          const ok = !!(data && data.success);
+          responseBox.className = ok ? 'schema-audit-response' : 'schema-error';
+          const msg = (data && data.data && data.data.message)
+            ? data.data.message
+            : (ok ? 'Report inviato via email.' : 'Errore durante l\'invio dell\'email.');
           responseBox.innerText = msg;
 
-          // reset to initial state (email visible but not required)
-          emailInput.removeAttribute('required');
-          submitButton.innerText = 'Analizza';
-          analysisDone = false;
+          // reset to initial state solo si salió bien — si falló, dejamos
+          // el botón en "Ricevi il report completo" para poder reintentar
+          // sin tener que analizar el sitio de nuevo.
+          if (ok) {
+            emailInput.removeAttribute('required');
+            submitButton.innerText = 'Analizza';
+            analysisDone = false;
+          }
         })
         .catch(() => {
           responseBox.className = 'schema-error';
