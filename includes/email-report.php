@@ -111,6 +111,5 @@ function send_seo_audit_email($post_id, $email) {
         'template'  => 'seo-audit-template',   // apunta a seo-audit-template.php
         'data'      => $data,
         'format'    => 'html',
-        'bcc_admin' => true,
     ]);
 }
