@@ -657,41 +657,41 @@ function schema_audit_run() {
 
 // Init Schema Audit: crea CPT + pide confirmación (doble opt-in, como SEO)
 function init_schema_audit() {
-    $url   = filter_var($_POST[‘site_url’] ?? ‘’, FILTER_VALIDATE_URL);
-    $email = sanitize_email($_POST[‘email’] ?? ‘’);
+    $url   = filter_var($_POST['site_url'] ?? '', FILTER_VALIDATE_URL);
+    $email = sanitize_email($_POST['email'] ?? '');
 
     if (!$url || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        wp_send_json_error([‘message’ => ‘Dati non validi.’]);
+        wp_send_json_error(['message' => 'Dati non validi.']);
     }
 
     // Crea el CPT "vacío" (el análisis ocurre después de confirmar email)
     $post_id = wp_insert_post([
-        ‘post_type’   => ‘seo_report’,
-        ‘post_title’  => ‘Schema Audit – ‘ . parse_url($url, PHP_URL_HOST) . ‘ - ‘ . current_time(‘mysql’),
-        ‘post_status’ => ‘publish’,
+        'post_type'   => 'seo_report',
+        'post_title'  => 'Schema Audit – ' . parse_url($url, PHP_URL_HOST) . ' - ' . current_time('mysql'),
+        'post_status' => 'publish',
     ]);
 
     if (is_wp_error($post_id) || !$post_id) {
-        wp_send_json_error([‘message’ => ‘Errore durante il salvataggio del report.’]);
+        wp_send_json_error(['message' => 'Errore durante il salvataggio del report.']);
     }
 
-    add_post_meta($post_id, ‘email’, sanitize_email($email));
-    update_post_meta($post_id, ‘site_url’, esc_url_raw($url));
-    update_post_meta($post_id, ‘audit-status’, ‘pending_verification’);
-    update_post_meta($post_id, ‘report_type’, ‘schema’);
+    add_post_meta($post_id, 'email', sanitize_email($email));
+    update_post_meta($post_id, 'site_url', esc_url_raw($url));
+    update_post_meta($post_id, 'audit-status', 'pending_verification');
+    update_post_meta($post_id, 'report_type', 'schema');
 
     // Doble opt-in: no se corre análisis todavía
     register_shutdown_function(function () use ($post_id, $email) {
-        if (function_exists(‘fastcgi_finish_request’)) {
+        if (function_exists('fastcgi_finish_request')) {
             fastcgi_finish_request();
         }
-        ru_send_verification_email($post_id, $email, ‘schema_audit’);
+        ru_send_verification_email($post_id, $email, 'schema_audit');
     });
 
     wp_send_json([
-        ‘success’      => true,
-        ‘message’      => ‘Controlla la tua email e conferma l\’indirizzo per ricevere l\’analisi.’,
-        ‘email_status’ => ‘pending_verification’,
+        'success'      => true,
+        'message'      => 'Controlla la tua email e conferma l\'indirizzo per ricevere l\'analisi.',
+        'email_status' => 'pending_verification',
     ]);
 }
 
